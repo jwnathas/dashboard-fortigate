@@ -178,7 +178,7 @@ else:
     }
 
     # --- DASHBOARD ---
-    st.title("📊 Dashboard Analítico: Migrações Fortigate")
+    st.title("📊 Dashboard Analítico: Ativações SD-WAN")
     
     # 1. CÁLCULO DE KPIS (REGRA ESTRITA)
     total = len(df_filtrado)
