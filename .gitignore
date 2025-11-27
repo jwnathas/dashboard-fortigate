@@ -1,0 +1,10 @@
+# Bloquear o Excel original (Dados Sensíveis)
+ControleDeRevisitas.xlsx
+
+# Bloquear o script de criptografia (Segurança)
+cripto.py
+
+# Bloquear arquivos temporários do Python (Opcional, mas recomendado)
+__pycache__/
+*.pyc
+.DS_Store
