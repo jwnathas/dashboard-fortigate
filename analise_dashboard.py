@@ -60,6 +60,28 @@ def load_data():
 
     return df, col_1a_visita
 
+# --- CSS PARA FIXAR O CABEÇALHO ---
+st.markdown("""
+    <style>
+    /* A mágica acontece aqui:
+       Procuramos um bloco vertical que contenha a nossa DIV marcadora com id="main-header-marker".
+       Assim, o CSS só afeta este bloco específico e ignora as métricas lá de baixo.
+    */
+    div[data-testid="stVerticalBlock"] > div:has(div#main-header-marker) {
+        position: sticky;
+        top: 0;
+        background-color: #0E1117; /* Garante fundo opaco */
+        z-index: 1;
+        padding-top: 14px; /* Espaço extra para o texto não cortar */
+        padding-bottom: 11px; /* Espaço extra para o texto não cortar */
+    }
+    div:has(div#b3) {
+        margin-top: 0px; /* Espaço acima do conteúdo rolável */
+        z-index: 1015;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- MOTOR DE CLASSIFICAÇÃO (POR VISITA) ---
 def classificar_evento_isolado(motivo, obs, data_visita, visita_anterior_concluida=False):
     """
@@ -163,6 +185,8 @@ else:
     # Se a seleção estiver vazia (usuário removeu tudo), o DF ficará vazio
     df_filtrado = df[df['Mes_Inicial'].isin(mes_sel)].copy()
 
+    
+
     # Mapa de Cores Padronizado
     color_map = {
         'Concluído': '#2ecc71', 
@@ -178,13 +202,14 @@ else:
     }
 
     # --- DASHBOARD ---
-    st.title("📊 Dashboard Analítico: Ativações SD-WAN")
     
+    st.title("📊 Dashboard Analítico: Ativações SD-WAN")
+
     # 1. CÁLCULO DE KPIS (REGRA ESTRITA)
     total = len(df_filtrado)
     finalizados = len(df_filtrado[df_filtrado['Status_Final'] == 'Concluído'])
     cancelados = len(df_filtrado[df_filtrado['Status_Final'] == 'Cancelado'])
-    
+
     # Definição estrita do que é Pendência
     lista_pendencias = [
         'Infraestrutura Telebras', 
@@ -192,21 +217,72 @@ else:
         'Misto (Telebras + MVC)', 
         'Acesso / MA / Logística'
     ]
-    
+
     pendentes_reais = len(df_filtrado[df_filtrado['Status_Final'].isin(lista_pendencias)])
-    
+
     outros = total - finalizados - cancelados - pendentes_reais
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total no Período", total)
-    
-    # CORREÇÃO DO ERRO DE DIVISÃO POR ZERO
-    pct_concluidas = (finalizados/total*100) if total > 0 else 0.0
-    k2.metric("Concluídas", finalizados, delta=f"{pct_concluidas:.1f}%")
-    
-    k3.metric("Pendências Técnicas", pendentes_reais, delta_color="inverse", 
-              help="Infra Telebras, MVC, Misto ou Acesso.")
-    k4.metric("Cancelados", cancelados)
+    # --- 1. CABEÇALHO FIXO (Sticky) ---
+    with st.container():
+        # Marca invisível que o CSS procura para aplicar o sticky somente a este container
+        st.markdown('<div id="main-header-marker"></div>'
+                    '<div id="b3"></div>'
+                    , unsafe_allow_html=True)
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total no Período", total)
+
+        # CORREÇÃO DO ERRO DE DIVISÃO POR ZERO
+        pct_concluidas = (finalizados/total*100) if total > 0 else 0.0
+        k2.metric("Concluídas", finalizados, delta=f"{pct_concluidas:.1f}%")
+
+        # Mostrar apenas o número no header (o botão fica no conteúdo rolável abaixo)
+        k3.metric("Pendências Atuais", pendentes_reais, delta_color="inverse", help="Infra, MVC ou Acesso.")
+        k4.metric("Cancelados", cancelados)
+
+    # --- 2. CONTEÚDO QUE ROLA (botão e demais elementos) ---
+    b1, b2, b3, b4 = st.columns(4)
+    with b3:
+        if pendentes_reais > 0:
+            with st.popover("🔍 Ver Detalhes", use_container_width=False):
+                st.subheader("Detalhamento das Pendências Atuais")
+                df_detalhe = df_filtrado[df_filtrado['Status_Final'].isin(lista_pendencias)]
+                counts_detalhe = df_detalhe['Status_Final'].value_counts().reset_index()
+                counts_detalhe.columns = ['Tipo de Pendência', 'Quantidade']
+                st.dataframe(counts_detalhe, use_container_width=True, hide_index=True)
+
+                # Mini gráfico no popover
+                fig_mini = px.pie(counts_detalhe, names='Tipo de Pendência', values='Quantidade', hole=0.5, color='Tipo de Pendência', color_discrete_map=color_map)
+                fig_mini.update_layout(height=250, margin=dict(t=0, b=0, l=0, r=0))
+                st.plotly_chart(fig_mini, use_container_width=True)
+
+    # --- Visão Geral (Gráfico de Pizza) ---
+    # Reaproveitar df_filtrado para distribuir por Status_Final
+    pie_counts = df_filtrado['Status_Final'].value_counts().reset_index()
+    pie_counts.columns = ['Status', 'Quantidade'] 
+
+    pie_color_map = {
+        'Concluído': '#2ecc71', 
+        'Infraestrutura Telebras': '#e74c3c', 
+        'Pendência Operacional (MVC)': '#e67e22', 
+        'Misto (Telebras + MVC)': '#d35400',
+        'Acesso / MA / Logística': '#f1c40f', 
+        'A Verificar (Bitrix/Teams)': '#95a5a6', 
+        'A Verificar (Ler Obs)': '#95a5a6',
+        'Cancelado': '#34495e', 
+        'Não Realizada': '#ecf0f1', 
+        'Não Iniciado': '#bdc3c7'
+    }
+
+    fig_overall_pie = px.pie(
+        pie_counts,
+        names='Status',
+        values='Quantidade',
+        title='Visão Geral: Distribuição por Status',
+        hole=0.35,
+        color_discrete_map=pie_color_map
+    )
+    st.plotly_chart(fig_overall_pie, use_container_width=True)
 
     if total == 0:
         st.warning("⚠️ Nenhum dado encontrado para os filtros selecionados. Selecione pelo menos um mês na barra lateral.")
@@ -242,7 +318,7 @@ else:
 
     # 3. RESOLVIDO NA 2ª VISITA
     st.header("2️⃣ RESOLVIDO NA 2ª VISITA")
-    
+
     # Filtro: Quem foi resolvido na V2
     concluidos_v2 = df_filtrado[df_filtrado['Status_V2'] == 'Concluído']
     qtd_v2_ok = len(concluidos_v2)
@@ -357,8 +433,8 @@ else:
         csv = df_visual.to_csv(index=False).encode('utf-8-sig')
         
         st.download_button(
-            label="📥 Baixar Lista de Pendências Priorizada (CSV)",
             data=csv,
             file_name="Lista_Pendencias_Priorizada.csv",
             mime="text/csv",
+            label="📥 Baixar Lista de Pendências Priorizada (CSV)",
         )
